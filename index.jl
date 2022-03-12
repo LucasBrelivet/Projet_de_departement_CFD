@@ -1,4 +1,5 @@
 using LinearAlgebra
+using SparseArrays
 using Plots
 const USE_GPU = false
 using ParallelStencil
@@ -9,7 +10,7 @@ else
     @init_parallel_stencil(Threads, Float64, 3);
 end 
 
-function ns_step!(u_x, u_y, u_z, u_x2, u_y2, u_z2, u_xstar, u_ystar, u_zstar, div_u_star, p, p2, ν, rho, dt, dx, dy, dz, nx, ny, nz)
+function ns_step!(u_x, u_y, u_z, u_x2, u_y2, u_z2, u_xstar, u_ystar, u_zstar, div_u_star, p, p2, ν, rho, dt, dx, dy, dz, nx, ny, nz, Δ)
 
     @parallel update_ustar!(u_x, u_y, u_z, u_xstar, u_ystar, u_zstar, ν, dx, dy, dz, dt)
     # boundary conditions on u_star ?
@@ -21,24 +22,25 @@ function ns_step!(u_x, u_y, u_z, u_x2, u_y2, u_z2, u_xstar, u_ystar, u_zstar, di
     @parallel dirichlet_bc_z!(div_u_star, 0, 0)    
 
     # initialize p
-    p .= 0.0
-    ε = 1e-2
-    dτ=0.00001
-    err = Inf
-    nb_iter = 0
-    while err > ε
-        @parallel update_pressure!(div_u_star, dτ, dt, dx, dy, dz, rho, p, p2)
+    # p .= 0.0
+    # ε = 1e-2
+    # dτ=0.00001
+    # err = Inf
+    # nb_iter = 0
+    # while err > ε
+    #     @parallel update_pressure!(div_u_star, dτ, dt, dx, dy, dz, rho, p, p2)
 
-        @parallel neumann_bc_x!(p2)
-        @parallel neumann_bc_y!(p2)
-        @parallel neumann_bc_z!(p2)
+    #     @parallel neumann_bc_x!(p2)
+    #     @parallel neumann_bc_y!(p2)
+    #     @parallel neumann_bc_z!(p2)
         
-        p, p2 = p2, p
-        err = norm(p-p2)
-        nb_iter += 1
-    end
-    println(err, "  ", nb_iter)
-
+    #     p, p2 = p2, p
+    #     err = norm(p-p2)
+    #     nb_iter += 1
+    # end
+    # println(err, "  ", nb_iter)
+    p = reshape(Δ \ reshape(div_u_star, nx*ny*nz), nx, ny, nz)
+    
     @parallel update_u!(u_xstar, u_ystar, u_zstar, u_x2, u_y2, u_z2, p, rho, dt, dx, dy, dz)
     
     @parallel dirichlet_bc_x!(u_x2, 0, 0)
@@ -49,7 +51,7 @@ function ns_step!(u_x, u_y, u_z, u_x2, u_y2, u_z2, u_xstar, u_ystar, u_zstar, di
     @parallel dirichlet_bc_y!(u_y2, 0, 0)
     @parallel dirichlet_bc_y!(u_z2, 0, 0)
 
-    u = 0.01
+    u = 1
     @parallel dirichlet_bc_z!(u_x2, 0, u)
     @parallel dirichlet_bc_z!(u_y2, 0, 0)
     @parallel dirichlet_bc_z!(u_z2, 0, 0)    
@@ -129,35 +131,50 @@ end
 
 function ns3D()
     # Physics
-    rho = 1.0;
-    ν = 1.0;
-    lx, ly, lz = 1.0, 1.0, 1.0;
+    rho = 1.0
+    ν = 1.0
+    lx, ly, lz = 1.0, 1.0, 1.0
 
     # Numerics
-    nx, ny, nz = 64, 64, 64;
-    nt = 2;
-    dx = lx/(nx-1);
-    dy = ly/(ny-1);
-    dz = lz/(nz-1);
+    nx, ny, nz = 32, 32, 32
+    nt = 100
+    dx = lx/(nx-1)
+    dy = ly/(ny-1)
+    dz = lz/(nz-1)
 
     # Array initializations
-    u_x = @zeros(nx, ny, nz);
-    u_y = @zeros(nx, ny, nz);
-    u_z = @zeros(nx, ny, nz);
-    u_x2 = @zeros(nx, ny, nz);
-    u_y2 = @zeros(nx, ny, nz);
-    u_z2 = @zeros(nx, ny, nz);
-    u_xstar = @zeros(nx, ny, nz);
-    u_ystar = @zeros(nx, ny, nz);
-    u_zstar = @zeros(nx, ny, nz);    
-    div_u_star = @zeros(nx, ny, nz); 
-    p = @zeros(nx, ny, nz);
-    p2 = @zeros(nx, ny, nz);
+    u_x = @zeros(nx, ny, nz)
+    u_y = @zeros(nx, ny, nz)
+    u_z = @zeros(nx, ny, nz)
+    u_x2 = @zeros(nx, ny, nz)
+    u_y2 = @zeros(nx, ny, nz)
+    u_z2 = @zeros(nx, ny, nz)
+    u_xstar = @zeros(nx, ny, nz)
+    u_ystar = @zeros(nx, ny, nz)
+    u_zstar = @zeros(nx, ny, nz)    
+    div_u_star = @zeros(nx, ny, nz) 
+    p = @zeros(nx, ny, nz)
+    p2 = @zeros(nx, ny, nz)
 
     # Time loop
-    dt = 1e-7#min(dx^2,dy^2,dz^2);
+    dt = 1e-4#min(dx^2,dy^2,dz^2);
+
+    ∂_x2 = spdiagm(0 => -2ones(nx), 1 => ones(nx-1), -1 => ones(nx-1))
+    # ∂_x2[1,2] = 2
+    # ∂_x2[end,end-1] = 2
+    
+    ∂_y2 = spdiagm(0 => -2ones(ny), 1 => ones(ny-1), -1 => ones(ny-1))
+    # ∂_y2[1,2] = 2
+    # ∂_y2[end,end-1] = 2
+    
+    ∂_z2 = spdiagm(0 => -2ones(nz), 1 => ones(nz-1), -1 => ones(nz-1))
+    # ∂_z2[1,2] = 2
+    # ∂_z2[end,end-1] = 2
+
+    Δ = kron(∂_x2, I(ny), I(nz)) + kron(I(nx), ∂_y2, I(nz)) + kron(I(nx), I(ny), ∂_z2)
+    
     for it = 1:nt
-        ns_step!(u_x, u_y, u_z, u_x2, u_y2, u_z2, u_xstar, u_ystar, u_zstar, div_u_star, p, p2, ν, rho, dt, dx, dy, dz, nx, ny, nz);
+        ns_step!(u_x, u_y, u_z, u_x2, u_y2, u_z2, u_xstar, u_ystar, u_zstar, div_u_star, p, p2, ν, rho, dt, dx, dy, dz, nx, ny, nz, Δ)
         u_x, u_x2 = u_x2, u_x
         u_y, u_y2 = u_y2, u_y
         u_z, u_z2 = u_z2, u_z
