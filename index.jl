@@ -39,7 +39,7 @@ function ns_step!(u_x, u_y, u_z, u_x2, u_y2, u_z2, u_xstar, u_ystar, u_zstar, di
     #     nb_iter += 1
     # end
     # println(err, "  ", nb_iter)
-    p = reshape(Δ \ reshape(-rho/dt*div_u_star, nx*ny*nz), nx, ny, nz)
+    p = reshape(Δ \ reshape(rho/dt*div_u_star, nx*ny*nz), nx, ny, nz)
     
     @parallel update_u!(u_xstar, u_ystar, u_zstar, u_x2, u_y2, u_z2, p, rho, dt, dx, dy, dz)
     
@@ -137,7 +137,7 @@ function ns3D()
 
     # Numerics
     nx, ny, nz = 32, 32, 32
-    nt = 100
+    nt = 10
     dx = lx/(nx-1)
     dy = ly/(ny-1)
     dz = lz/(nz-1)
