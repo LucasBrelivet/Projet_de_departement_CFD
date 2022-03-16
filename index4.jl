@@ -42,7 +42,7 @@ end
 end
 
 function NS_solve()
-    nx, ny, nt = 50, 50, 10000
+    nx, ny, nt = 64, 64, 10000
 
     w, h = 1.0, 1.0
     dx, dy = w/nx, h/ny
@@ -123,5 +123,12 @@ u_max = maximum(u)
 # streamline plot
 x = repeat((1:nx-2)*w/(nx-1), 1, ny-2)
 y = repeat((1:ny-2)*h/(ny-1), 1, nx-2)'
-streamplot(x', y', u_x[2:end-1,2:end-1]', u_y[2:end-1,2:end-1]')
+
+PyPlot.axes()[:set_aspect]("equal")
+
+PyPlot.contourf(x, y, p[2:end-1,2:end-1])
+streamplot(x', y', u_x[2:end-1,2:end-1]', u_y[2:end-1,2:end-1]', color="black")
+PyPlot.grid("on")
+PyPlot.colorbar()
+
 PyPlot.savefig("streamlines.png")
