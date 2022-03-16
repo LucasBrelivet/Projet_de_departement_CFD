@@ -3,7 +3,9 @@ using SparseArrays
 using Plots
 using LinearAlgebra
 using SparseArrays
-using Plots
+# using Plots
+using PyPlot
+
 const USE_GPU = false
 using ParallelStencil
 @static if USE_GPU
@@ -40,13 +42,13 @@ end
 end
 
 function NS_solve()
-    nx, ny, nt = 41, 41, 10000
+    nx, ny, nt = 50, 50, 10000
 
     w, h = 1.0, 1.0
     dx, dy = w/nx, h/ny
     dt = 0.0001
     ρ = 1.0
-    ν = 0.01
+    ν = 0.08
 
     u_x        = @zeros(nx, ny)
     u_y        = @zeros(nx, ny)
@@ -60,41 +62,39 @@ function NS_solve()
     ∂_x2 = spdiagm(0 => -2/(dx^2)*ones(nx),
                    1 =>  1/(dx^2)*ones(nx-1),
                   -1 =>  1/(dx^2)*ones(nx-1))
-    ∂_x2[1,2] = 2/(dx^2)
-    ∂_x2[end,end-1] = 2/(dx^2)
+    ∂_x2[1,2] = 2/(dx^2) # ∂p/∂x = 0 at y = 0
+    # p = 0 at y=h
 
     ∂_y2 = spdiagm(0 => -2/(dy^2)*ones(ny),
                    1 =>  1/(dy^2)*ones(ny-1),
                   -1 =>  1/(dy^2)*ones(ny-1))
-    ∂_y2[1,2] = 2/(dy^2)
-    ∂_y2[end,end-1] = 2/(dy^2)
+    ∂_y2[1,2] = 2/(dy^2) # ∂p/∂y = 0 at x = 0
+    ∂_y2[end,end-1] = 2/(dy^2) # ∂p/∂y = 0 at x=w
 
     Δ = kron(∂_x2, I(ny)) + kron(I(nx), ∂_y2)
-    Δ[1,:] .= 0
-    Δ[1,1] = 1
 
     for n∈1:nt
         println(n)
         
         @parallel update_u_star!(u_x_star, u_y_star, u_x, u_y, ν, dx, dy, dt, nx, ny)
-        u_x_star[1,:] = u_x_star[end-1,:]
-        u_y_star[1,:] = u_y_star[end-1,:]
+        u_x_star[1,:] .= 0
+        u_x_star[end,:] .= 0
 
-        u_x_star[end,:] = u_x_star[2,:]
-        u_y_star[end,:] = u_y_star[2,:]
+        u_y_star[1,:] .= -u_y_star[2,:]
+        u_y_star[end,:] .= -u_y_star[end-1,:]
 
-        u_x_star[:,1] = -u_x_star[:,2]
-        u_x_star[:,end] = -u_x_star[:,end-1]
+        u_x_star[:,1] .= -u_x_star[:,2]
+        u_x_star[:,end] .= -u_x_star[:,end-1]
 
-        u_y_star[:,1] = -u_y_star[:,2]
-        u_y_star[:,end] = -u_y_star[:,end-1]
+        u_y_star[:,1] .= 0
+        u_y_star[:,end] .= 0 
         
         @parallel update_div_u_star!(div_u_star, u_x_star, u_y_star, dx, dy, nx, ny)
-        div_u_star[1,:] = div_u_star[end-1,:]
-        div_u_star[end,:] = div_u_star[2,:]
+        div_u_star[1,:] .= -div_u_star[2,:]
+        div_u_star[end,:] .= -div_u_star[end-1,:]
 
-        div_u_star[:,1] = -div_u_star[:,2]
-        div_u_star[:,end] = -div_u_star[:,end-1]
+        div_u_star[:,1] .= -div_u_star[:,2]
+        div_u_star[:,end] .= -div_u_star[:,end-1]
         
         update_p!(p, div_u_star, Δ, ρ, dx, dy, dt, nx, ny)
         @parallel update_u!(u_x, u_y, u_x_star, u_y_star, p, ρ, dx, dy, dt, nx, ny)
@@ -102,11 +102,11 @@ function NS_solve()
         u_x[1,:] .= 0
         u_x[end,:] .= 0
 
-        u_y[1,:] = -u_y[2,:]
-        u_y[end,:] = -u_y[end-1,:]
+        u_y[1,:] .= -u_y[2,:]
+        u_y[end,:] .= -u_y[end-1,:]
 
-        u_x[:,1] = -u_x[:,2]
-        u_x[:,end] = 2*U*ones(ny)-u_x[:,end-1]
+        u_x[:,1] .= -u_x[:,2]
+        u_x[:,end] .= 2*U*ones(ny)-u_x[:,end-1]
 
         u_y[:,1] .= 0
         u_y[:,end] .= 0         
@@ -120,10 +120,8 @@ end
 u_x, u_y, u, p, nx, ny, dx, dy, w, h = NS_solve()
 u_max = maximum(u)
 
-xs = repeat((0:nx-1)*w/(nx-1), ny)
-ys = reshape(repeat((0:ny-1)*h/(ny-1), 1, nx)', nx*ny)
-
-quiver_plot = contour((0:nx-1)*w/(nx-1), (0:ny-1)*h/(ny-1), reshape(p, nx, ny)', fill=true)
-quiver!(xs, ys, quiver=(dx*vec(u_x)/u_max, dy*vec(u_y)/u_max), arrowsize=0.4)
-
-display(quiver_plot)
+# streamline plot
+x = repeat((1:nx-2)*w/(nx-1), 1, ny-2)
+y = repeat((1:ny-2)*h/(ny-1), 1, nx-2)'
+streamplot(x', y', u_x[2:end-1,2:end-1]', u_y[2:end-1,2:end-1]')
+PyPlot.savefig("streamlines.png")
