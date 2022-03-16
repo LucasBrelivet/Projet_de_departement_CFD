@@ -3,7 +3,7 @@ using SparseArrays
 using Plots
 using LinearAlgebra
 using SparseArrays
-using Plots
+using PyPlot
 const USE_GPU = false
 using ParallelStencil
 @static if USE_GPU
@@ -119,14 +119,21 @@ function NS_solve()
 end
 
 u_x, u_y, u, p, nx, ny, dx, dy, w, h = NS_solve()
-u_max = maximum(u)
 
-xs = repeat((0:nx-1)*w/(nx-1), ny)
-ys = reshape(repeat((0:ny-1)*h/(ny-1), 1, nx)', nx*ny)
+x_v_domain = (0:(nx-2))*w/(nx-2)
+y_v_domain = (0:(ny-2))*h/(ny-2) 
+x_v = repeat(x_v_domain', ny-1)
+y_v = repeat(y_v_domain, 1, nx-1)
 
-quiver_plot = contour((0:nx-1)*w/(nx-1), (0:ny-1)*h/(ny-1), reshape(p, nx, ny)', fill=true)
-quiver!(xs, ys, quiver=(dx*vec(u_x)/u_max, dy*vec(u_y)/u_max), arrowsize=0.4)
+x_p = (0:(nx-1))*w/(nx-1)
+y_p = (0:(ny-1))*h/(ny-1)
 
-display(quiver_plot)
+u_x_avg = (u_x[2:end,1:end-1] .+ u_x[2:end,2:end]) ./ 2
+u_y_avg = (u_y[1:end-1,2:end] .+ u_y[2:end,2:end]) ./ 2
 
-plot(u[1,:], legend=false)
+PyPlot.subplot(121)
+PyPlot.quiver(x_v, y_v, u_x_avg', u_y_avg')
+
+PyPlot.subplot(122)
+PyPlot.plot((0:(nx-2))/(nx-2), u_x_avg[1,:])
+

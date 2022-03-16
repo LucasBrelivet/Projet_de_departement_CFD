@@ -3,7 +3,6 @@ using SparseArrays
 using Plots
 using LinearAlgebra
 using SparseArrays
-# using Plots
 using PyPlot
 
 const USE_GPU = false
@@ -42,13 +41,13 @@ end
 end
 
 function NS_solve()
-    nx, ny, nt = 64, 64, 10000
+    nx, ny, nt = 60, 60, 10000
 
     w, h = 1.0, 1.0
     dx, dy = w/nx, h/ny
-    dt = 0.0001
+    dt = min(dx^2, dy^2)
     ρ = 1.0
-    ν = 0.08
+    ν = 0.01
 
     u_x        = @zeros(nx, ny)
     u_y        = @zeros(nx, ny)
@@ -58,6 +57,9 @@ function NS_solve()
     p          = @zeros(nx, ny)
 
     U = 1.0
+    Us = U*ones(nx)
+    Us[1] = 0.0
+    Us[end] = 0.0
 
     ∂_x2 = spdiagm(0 => -2/(dx^2)*ones(nx),
                    1 =>  1/(dx^2)*ones(nx-1),
@@ -106,7 +108,7 @@ function NS_solve()
         u_y[end,:] .= -u_y[end-1,:]
 
         u_x[:,1] .= -u_x[:,2]
-        u_x[:,end] .= 2*U*ones(ny)-u_x[:,end-1]
+        u_x[:,end] .= 2*Us-u_x[:,end-1]
 
         u_y[:,1] .= 0
         u_y[:,end] .= 0         
@@ -118,17 +120,24 @@ function NS_solve()
 end
 
 u_x, u_y, u, p, nx, ny, dx, dy, w, h = NS_solve()
-u_max = maximum(u)
 
-# streamline plot
-x = repeat((1:nx-2)*w/(nx-1), 1, ny-2)
-y = repeat((1:ny-2)*h/(ny-1), 1, nx-2)'
+x_v_domain = (0:(nx-2))*w/(nx-2)
+y_v_domain = (0:(ny-2))*h/(ny-2) 
+x_v = repeat(x_v_domain', ny-1)
+y_v = repeat(y_v_domain, 1, nx-1)
 
-PyPlot.axes()[:set_aspect]("equal")
+u_x_avg = (u_x[2:end,1:end-1] .+ u_x[2:end,2:end]) ./ 2
+u_y_avg = (u_y[1:end-1,2:end] .+ u_y[2:end,2:end]) ./ 2
 
-PyPlot.contourf(x, y, p[2:end-1,2:end-1])
-streamplot(x', y', u_x[2:end-1,2:end-1]', u_y[2:end-1,2:end-1]', color="black")
-PyPlot.grid("on")
+x_p = (0:(nx-1))*w/(nx-1)
+y_p = (0:(ny-1))*h/(ny-1)
+
+PyPlot.subplot(121)
+PyPlot.contourf(x_p, y_p, p', levels=50)
 PyPlot.colorbar()
+PyPlot.streamplot(x_v, y_v, u_x_avg', u_y_avg', color="black", density=3)
 
-PyPlot.savefig("streamlines.png")
+PyPlot.subplot(122)
+PyPlot.contourf(x_p, y_p, p', levels=50)
+PyPlot.colorbar()
+PyPlot.quiver(x_v, y_v, u_x_avg', u_y_avg')
