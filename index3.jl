@@ -14,7 +14,7 @@ end
 
 @parallel_indices (i,j) function update_u_star!(u_x_star, u_y_star, u_x, u_y, ν, dx, dy, dt, nx, ny)
     if i>1 && i<=nx-1 && j>1 && j<= ny-1
-        u_x_star[i,j] = u_x[i,j] + dt*(-(u_x[i,j]*(u_x[i+1,j]-u_x[i-1,j])/(2dx)+(u_y[i,j]+u_y[i,j+1]+u_y[i-1,j+1]+u_y[i-1,j])/4*(u_x[i,j+1]-u_x[i,j-1])/(2dy))+ν*((u_x[i+1,j]+u_x[i-1,j]-2*u_x[i,j])/(dx^2)+(u_x[i,j+1]+u_y[i,j-1]-2*u_y[i,j])/(dy^2)))
+        u_x_star[i,j] = u_x[i,j] + dt*(-(u_x[i,j]*(u_x[i+1,j]-u_x[i-1,j])/(2dx)+(u_y[i,j]+u_y[i,j+1]+u_y[i-1,j+1]+u_y[i-1,j])/4*(u_x[i,j+1]-u_x[i,j-1])/(2dy))+ν*((u_x[i+1,j]+u_x[i-1,j]-2*u_x[i,j])/(dx^2)+(u_x[i,j+1]+u_x[i,j-1]-2*u_x[i,j])/(dy^2)))
         u_y_star[i,j] = u_y[i,j] + dt*(-((u_x[i,j]+u_x[i+1,j]+u_x[i+1,j-1]+u_x[i,j-1])/4*(u_y[i+1,j]-u_y[i-1,j])/(2dx)+u_y[i,j]*(u_y[i,j+1]-u_y[i,j-1])/(2dy))+ν*((u_y[i+1,j]+u_y[i-1,j]-2*u_y[i,j])/(dx^2)+(u_y[i,j+1]+u_y[i,j-1]-2*u_y[i,j])/(dy^2)))
     end
     return nothing
@@ -40,50 +40,41 @@ end
 end
 
 function NS_solve()
-    nx, ny, nt = 64, 64, 1000
+    nx, ny, nt = 63, 63, 1000
 
     w, h = 1.0, 1.0
     dx, dy = w/nx, h/ny
-    dt = 0.00001
+    dt = 0.01
     ρ = 1.0
-    ν = 0.1
+    ν = 0.01
 
-    u_x        = zeros(nx, ny)
-    u_y        = zeros(nx, ny)
-    u_x_star   = zeros(nx, ny)
-    u_y_star   = zeros(nx, ny)
-    div_u_star = zeros(nx, ny)
-    p          = zeros(nx, ny)
+    u_x        = @zeros(nx, ny)
+    u_y        = @zeros(nx, ny)
+    u_x_star   = @zeros(nx, ny)
+    u_y_star   = @zeros(nx, ny)
+    div_u_star = @zeros(nx, ny)
+    p          = @zeros(nx, ny)
 
-    # U = 1.0
     F = 1.0
 
     ∂_x2 = spdiagm(0 => -2/(dx^2)*ones(nx),
                    1 =>  1/(dx^2)*ones(nx-1),
-                   -1 =>  1/(dx^2)*ones(nx-1))
-    ∂_x2[1,end] = 1/(dx^2)
-    ∂_x2[end,1] = 1/(dx^2)
+                  -1 =>  1/(dx^2)*ones(nx-1))
+    ∂_x2[1,end-1] = 1/(dx^2)
+    ∂_x2[end,2] = 1/(dx^2)
 
     ∂_y2 = spdiagm(0 => -2/(dy^2)*ones(ny),
                    1 =>  1/(dy^2)*ones(ny-1),
-                   -1 =>  1/(dy^2)*ones(ny-1))
+                  -1 =>  1/(dy^2)*ones(ny-1))
     ∂_y2[1,2] = 2/(dy^2)
     ∂_y2[end,end-1] = 2/(dy^2)
 
     Δ = kron(∂_x2, I(ny)) + kron(I(nx), ∂_y2)
     # Δ[1,:] .= 0
     # Δ[1,1] = 1
-    
+
     for n∈1:nt
         println(n)
-        u_x[1,:] = u_x[end-1,:]
-        u_y[1,:] = u_y[end-1,:]
-
-        u_x[end,:] = u_x[2,:]
-        u_y[end,:] = u_y[2,:]
-
-        u_x[:,1] = -u_x[:,2]
-        u_x[:,end] = -u_x[:,end-1]
         
         @parallel update_u_star!(u_x_star, u_y_star, u_x, u_y, ν, dx, dy, dt, nx, ny)
         u_x_star[1,:] = u_x_star[end-1,:]
@@ -94,13 +85,32 @@ function NS_solve()
 
         u_x_star[:,1] = -u_x_star[:,2]
         u_x_star[:,end] = -u_x_star[:,end-1]
+
+        u_y_star[:,1] = -u_y_star[:,2]
+        u_y_star[:,end] = -u_y_star[:,end-1]
         
         @parallel update_div_u_star!(div_u_star, u_x_star, u_y_star, dx, dy, nx, ny)
         div_u_star[1,:] = div_u_star[end-1,:]
         div_u_star[end,:] = div_u_star[2,:]
+
+        div_u_star[:,1] = -div_u_star[:,2]
+        div_u_star[:,end] = -div_u_star[:,end-1]
         
         update_p!(p, div_u_star, Δ, ρ, dx, dy, dt, nx, ny)
         @parallel update_u!(u_x, u_y, u_x_star, u_y_star, p, ρ, dx, dy, dt, nx, ny, F)
+
+        u_x[end,:] = u_x[2,:]
+        u_y[end,:] = u_y[2,:]
+        
+        u_x[1,:] = u_x[end-1,:]
+        u_y[1,:] = u_y[end-1,:]
+
+        u_x[:,1] = -u_x[:,2]
+        u_x[:,end] = -u_x[:,end-1]
+
+        u_y[:,1] .= 0
+        # u_y[:,2] .= 0
+        u_y[:,end] .= 0         
     end
 
     u = sqrt.(u_x .^2 .+ u_y .^2)
@@ -118,3 +128,5 @@ quiver_plot = contour((0:nx-1)*w/(nx-1), (0:ny-1)*h/(ny-1), reshape(p, nx, ny)',
 quiver!(xs, ys, quiver=(dx*vec(u_x)/u_max, dy*vec(u_y)/u_max), arrowsize=0.4)
 
 display(quiver_plot)
+
+plot(u[1,:], legend=false)
