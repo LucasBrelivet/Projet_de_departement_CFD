@@ -1,8 +1,5 @@
 using LinearAlgebra
 using SparseArrays
-using Plots
-using LinearAlgebra
-using SparseArrays
 using PyPlot
 
 const USE_GPU = false
@@ -135,9 +132,10 @@ y_p = (0:(ny-1))*h/(ny-1)
 PyPlot.subplot(121)
 PyPlot.contourf(x_p, y_p, p', levels=50)
 PyPlot.colorbar()
-PyPlot.streamplot(x_v, y_v, u_x_avg', u_y_avg', color="black", density=3)
+PyPlot.streamplot(x_v, y_v, u_x_avg', u_y_avg', density=3, color="black")
 
 PyPlot.subplot(122)
 PyPlot.contourf(x_p, y_p, p', levels=50)
 PyPlot.colorbar()
 PyPlot.quiver(x_v, y_v, u_x_avg', u_y_avg')
+
