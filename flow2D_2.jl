@@ -1,6 +1,7 @@
 using LinearAlgebra
 using SparseArrays
 using PyPlot
+
 const USE_GPU = false
 using ParallelStencil
 @static if USE_GPU
@@ -28,20 +29,20 @@ function update_p!(p, div_u_star, Δ, ρ, dx, dy, dt, nx, ny)
     p .= reshape(Δ \ reshape((ρ/dt)*div_u_star, nx*ny), nx, ny)
 end
 
-@parallel_indices (i,j) function update_u!(u_x, u_y, u_x_star, u_y_star, p, ρ, dx, dy, dt, nx, ny, F)
+@parallel_indices (i,j) function update_u!(u_x, u_y, u_x_star, u_y_star, p, ρ, dx, dy, dt, nx, ny)
     if i>1 && i<=nx-1 && j>1 && j<= ny-1    
-        u_x[i,j] = u_x_star[i,j] -(dt/ρ)*(p[i,j]-p[i-1,j])/dx + dt*F
+        u_x[i,j] = u_x_star[i,j] -(dt/ρ)*(p[i,j]-p[i-1,j])/dx
         u_y[i,j] = u_y_star[i,j] -(dt/ρ)*(p[i,j]-p[i,j-1])/dy
     end
     return nothing
 end
 
 function NS_solve()
-    nx, ny, nt = 63, 63, 1000
+    nx, ny, nt = 60, 60, 10000
 
-    w, h = 1.0, 1.0
+    w, h = 1.0, 1/3
     dx, dy = w/nx, h/ny
-    dt = 0.01
+    dt = min(dx^2, dy^2)
     ρ = 1.0
     ν = 0.01
 
@@ -52,61 +53,61 @@ function NS_solve()
     div_u_star = @zeros(nx, ny)
     p          = @zeros(nx, ny)
 
-    F = 1.0
+    U = 1.0
+    Us = U*ones(nx)
+    Us[1] = 0.0
+    Us[end] = 0.0
 
-    ∂_x2 = spdiagm(0 => -2/(dx^2)*ones(nx),
-                   1 =>  1/(dx^2)*ones(nx-1),
-                  -1 =>  1/(dx^2)*ones(nx-1))
-    ∂_x2[1,end-1] = 1/(dx^2)
-    ∂_x2[end,2] = 1/(dx^2)
+    ∂_x2 = spdiagm(0 => -2/(dy^2)*ones(nx),
+                   1 =>  1/(dy^2)*ones(nx-1),
+                  -1 =>  1/(dy^2)*ones(nx-1))
+    ∂_x2[1,2] = 2/(dy^2) # ∂p/∂x = 0 at y = 0
+    ∂_x2[end,end-1] = 2/(dy^2) # ∂p/∂x = 0 at y=h
 
-    ∂_y2 = spdiagm(0 => -2/(dy^2)*ones(ny),
-                   1 =>  1/(dy^2)*ones(ny-1),
-                  -1 =>  1/(dy^2)*ones(ny-1))
-    ∂_y2[1,2] = 2/(dy^2)
-    ∂_y2[end,end-1] = 2/(dy^2)
+    ∂_y2 = spdiagm(0 => -2/(dx^2)*ones(ny),
+                   1 =>  1/(dx^2)*ones(ny-1),
+                  -1 =>  1/(dx^2)*ones(ny-1))
+    ∂_y2[1,2] = 2/(dx^2) # ∂p/∂x = 0 at x = 0
+    # p = 0 at x=w
 
     Δ = kron(∂_x2, I(ny)) + kron(I(nx), ∂_y2)
-    # Δ[1,:] .= 0
-    # Δ[1,1] = 1
 
     for n∈1:nt
         println(n)
         
         @parallel update_u_star!(u_x_star, u_y_star, u_x, u_y, ν, dx, dy, dt, nx, ny)
-        u_x_star[1,:] = u_x_star[end-1,:]
-        u_y_star[1,:] = u_y_star[end-1,:]
+        u_x_star[1,:] .= 0
+        u_x_star[end,:] .= u_x[end-1,:]
 
-        u_x_star[end,:] = u_x_star[2,:]
-        u_y_star[end,:] = u_y_star[2,:]
+        u_y_star[1,:] .= -u_y_star[2,:]
+        u_y_star[end,:] .= u_y_star[end-1,:]
 
-        u_x_star[:,1] = -u_x_star[:,2]
-        u_x_star[:,end] = -u_x_star[:,end-1]
+        u_x_star[:,1] .= -u_x_star[:,2]
+        u_x_star[:,end] .= -u_x_star[:,end-1]
 
-        u_y_star[:,1] = -u_y_star[:,2]
-        u_y_star[:,end] = -u_y_star[:,end-1]
+        u_y_star[:,1] .= 0
+        u_y_star[:,end] .= 0 
         
         @parallel update_div_u_star!(div_u_star, u_x_star, u_y_star, dx, dy, nx, ny)
-        div_u_star[1,:] = div_u_star[end-1,:]
-        div_u_star[end,:] = div_u_star[2,:]
+        div_u_star[1,:] .= -div_u_star[2,:]
+        div_u_star[end,:] .= -div_u_star[end-1,:]
 
-        div_u_star[:,1] = -div_u_star[:,2]
-        div_u_star[:,end] = -div_u_star[:,end-1]
+        div_u_star[:,1] .= -div_u_star[:,2]
+        div_u_star[:,end] .= -div_u_star[:,end-1]
         
         update_p!(p, div_u_star, Δ, ρ, dx, dy, dt, nx, ny)
-        @parallel update_u!(u_x, u_y, u_x_star, u_y_star, p, ρ, dx, dy, dt, nx, ny, F)
+        @parallel update_u!(u_x, u_y, u_x_star, u_y_star, p, ρ, dx, dy, dt, nx, ny)
 
-        u_x[end,:] = u_x[2,:]
-        u_y[end,:] = u_y[2,:]
-        
-        u_x[1,:] = u_x[end-1,:]
-        u_y[1,:] = u_y[end-1,:]
+        u_x[1,:] .= 2*Us
+        u_x[end,:] .= u_x[end-1,:]
 
-        u_x[:,1] = -u_x[:,2]
-        u_x[:,end] = -u_x[:,end-1]
+        u_y[1,:] .= -u_y[2,:]
+        u_y[end,:] .= u_y[end-1,:]
+
+        u_x[:,1] .= -u_x[:,2]
+        u_x[:,end] .= -u_x[:,end-1]
 
         u_y[:,1] .= 0
-        # u_y[:,2] .= 0
         u_y[:,end] .= 0         
     end
 
@@ -122,15 +123,16 @@ y_v_domain = (0:(ny-2))*h/(ny-2)
 x_v = repeat(x_v_domain', ny-1)
 y_v = repeat(y_v_domain, 1, nx-1)
 
-x_p = (0:(nx-1))*w/(nx-1)
-y_p = (0:(ny-1))*h/(ny-1)
-
 u_x_avg = (u_x[2:end,1:end-1] .+ u_x[2:end,2:end]) ./ 2
 u_y_avg = (u_y[1:end-1,2:end] .+ u_y[2:end,2:end]) ./ 2
 
-PyPlot.subplot(121)
-PyPlot.quiver(x_v, y_v, u_x_avg', u_y_avg')
+x_p = (0:(nx-1))*w/(nx-1)
+y_p = (0:(ny-1))*h/(ny-1)
 
-PyPlot.subplot(122)
-PyPlot.plot((0:(nx-2))/(nx-2), u_x_avg[1,:])
+PyPlot.axes().set_aspect(1)
+PyPlot.contourf(x_p, y_p, p', levels=50)
+PyPlot.ylim((0,h))
+PyPlot.colorbar(fraction=0.016)
+PyPlot.streamplot(x_v, y_v, u_x_avg', u_y_avg', density=1, color="black", linewidth=0.5, arrowsize=0.5)
 
+PyPlot.savefig("flow2D.pdf", bbox_inches="tight")
