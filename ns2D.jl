@@ -129,13 +129,10 @@ u_y_avg = (u_y[1:end-1,2:end] .+ u_y[2:end,2:end]) ./ 2
 x_p = (0:(nx-1))*w/(nx-1)
 y_p = (0:(ny-1))*h/(ny-1)
 
-PyPlot.subplot(121)
 PyPlot.contourf(x_p, y_p, p', levels=50)
 PyPlot.colorbar()
-PyPlot.streamplot(x_v, y_v, u_x_avg', u_y_avg', density=3, color="black")
-
-PyPlot.subplot(122)
-PyPlot.contourf(x_p, y_p, p', levels=50)
-PyPlot.colorbar()
-PyPlot.quiver(x_v, y_v, u_x_avg', u_y_avg')
+PyPlot.xlim((0,w))
+PyPlot.ylim((0,h))
+PyPlot.streamplot(x_v, y_v, u_x_avg', u_y_avg', density=3, color="black", linewidth=0.5, arrowsize=0.5)
+PyPlot.savefig("streamlines.pdf", bbox_inches="tight")
 
