@@ -10,8 +10,95 @@ else
     @init_parallel_stencil(Threads, Float64, 2);
 end
 
+function compute_u★!(nₓ,
+                     nᵧ,
+                     dt,
+                     dξ,
+                     dη,
+                     ν,
+                     J_1,
+                     J_2,
+                     inv_J_1,
+                     inv_J_2,
+                     g¹¹_1,
+                     g¹²_1,
+                     g²¹_1,
+                     g²²_1,
+                     g¹¹_2,
+                     g¹²_2,
+                     g²¹_2,
+                     g²²_2,                     
+                     uₓ_1,
+                     uᵧ_1,
+                     uₓ_2,
+                     uᵧ_2,
+                     u¹_1,
+                     u²_1,
+                     u¹_2,
+                     u²_2,
+                     u★¹_1,
+                     u★²_2)
+
+
+    A1_1 = @zeros(nₓ, nᵧ)
+    A2_1 = @zeros(nₓ, nᵧ)
+    A1_2 = @zeros(nₓ, nᵧ)
+    A2_2 = @zeros(nₓ, nᵧ)    
+
+    B11 = @zeros(nₓ, nᵧ)
+    B12 = @zeros(nₓ, nᵧ)
+    B21 = @zeros(nₓ, nᵧ)
+    B22 = @zeros(nₓ, nᵧ)        
+
+    for i∈2:nₓ-1, j∈2:nᵧ-1
+        B11[i,j] = inv_J_1[i,j]*(g¹¹_1[i,j]*@dξ_1(uₓ_1,i,j)/dξ + g¹²_1[i,j]*@dη_1(uₓ_1,i,j)/dη)
+        B12[i,j] = inv_J_1[i,j]*(g²¹_1[i,j]*@dξ_1(uₓ_1,i,j)/dξ + g²²_1[i,j]*@dη_1(uₓ_1,i,j)/dη)
+        
+        B21[i,j] = inv_J_2[i,j]*(g¹¹_2[i,j]*@dξ_2(uᵧ_2,i,j)/dξ + g¹²_2[i,j]*@dη_2(uᵧ_2,i,j)/dη)
+        B22[i,j] = inv_J_2[i,j]*(g²¹_2[i,j]*@dξ_2(uᵧ_2,i,j)/dξ + g²²_2[i,j]*@dη_2(uᵧ_2,i,j)/dη)        
+    end
+    
+
+    for i∈2:nₓ-1, j∈2:nᵧ-1
+        A1_1[i,j] = dt*(-(u¹_1*@dξ_1(uₓ_1,i,j)/dξ + u²_1*@dη_1(uₓ_1,i,j)/dη) + ν*J_1[i,j]*(@dξ_1(B11,i,j)/dξ + @dη_1(B12,i,j)/dη))
+        A2_2[i,j] = dt*(-(u¹_2*@dξ_1(uᵧ_2,i,j)/dξ + u²_2*@dη_2(uᵧ_2,i,j)/dη) + ν*J_2[i,j]*(@dξ_2(B21,i,j)/dξ + @dη_2(B22,i,j)/dη))
+    end
+
+    A1_2[2:end-1,2:end-1] = 1/4*(A1_1[2:end,1:end-2] + A1_1[3:end-1,1:end-2] + A1_1[2:end,2:end] + A1_1[3:end-1,2:end])
+    A2_1[2:end-1,2:end-1] = 1/4*(A2_2[1:end-2,2:end] + A2_2[1:end-2,3:end-1] + A2_2[2:end,2:end] + A2_2[2:end,3:end-1])
+
+    # boundary conditions on A1, A2 ?
+
+    for i∈2:nₓ-1, j∈2:nᵧ-1
+        u★¹_1[i,j] = A1_1[i,j]*g¹ₓ_1[i,j] + A2_1[i,j]*g¹ᵧ_1[i,j]
+        u★²_2[i,j] = A1_2[i,j]*g²ₓ_2[i,j] + A2_2[i,j]*g²ᵧ_2[i,j]
+    end
+
+    # u★¹_2, u★²_1 not needed to compute the divergence !!!
+end
+
+function compute_div_u★(nₓ,
+                        nᵧ,
+                        dt,
+                        dξ,
+                        dη,
+                        ρ,
+                        J_1,
+                        J_2,
+                        inv_J_1,
+                        inv_J_2,
+                        u★¹_1,
+                        u★²_2,
+                        div_u★)
+
+    for i∈2:nₓ-1, j∈2:nᵧ-1
+        div_u★[i,j] = (ρ/dt)*(1/4)*(J_1[i,j]+J_1[i+1,j]+J_2[i,j]+J_2[i,j+1])*((u★¹_1[i+1,j]*inv_J_1[i+1,j]-u★¹_1[i,j]*inv_J_1[i,j])/dξ + (u★²_2[i,j+1]*inv_J_2[i,j+1]-u★²_2[i,j]*inv_J_2[i,j])/dη)
+    end
+end
+                        
+
 function NS_solve()
-    nₓ, nᵧ , nₜ = 60, 60, 10000
+    nₓ, nᵧ , nₜ = 30, 30, 10
 
     w, h = 1.0, 1.0
     dξ, dη = w/nₓ, h/nᵧ
@@ -29,14 +116,14 @@ function NS_solve()
     u¹_2    = @zeros(nₓ, nᵧ)
     u²_2    = @zeros(nₓ, nᵧ)
 
-    u★ₓ_1    = @zeros(nₓ, nᵧ)
-    u★ᵧ_1    = @zeros(nₓ, nᵧ)
-    u★ₓ_2    = @zeros(nₓ, nᵧ)
-    u★ᵧ_2    = @zeros(nₓ, nᵧ)
+    # u★ₓ_1    = @zeros(nₓ, nᵧ)
+    # u★ᵧ_1    = @zeros(nₓ, nᵧ)
+    # u★ₓ_2    = @zeros(nₓ, nᵧ)
+    # u★ᵧ_2    = @zeros(nₓ, nᵧ)
 
     u★¹_1    = @zeros(nₓ, nᵧ)
-    u★²_1    = @zeros(nₓ, nᵧ)
-    u★¹_2    = @zeros(nₓ, nᵧ)
+    # u★²_1    = @zeros(nₓ, nᵧ)
+    # u★¹_2    = @zeros(nₓ, nᵧ)
     u★²_2    = @zeros(nₓ, nᵧ)    
 
     p       = @zeros(nₓ, nᵧ)
@@ -48,15 +135,15 @@ function NS_solve()
     x       = @zeros(2nₓ+1, 2nᵧ+1)
     y       = @zeros(2nₓ+1, 2nᵧ+1)
 
-    x˒ξ_1   = @zeros(nₓ, nᵧ)
+    x˒ξ_1   = @ones(nₓ, nᵧ)
     x˒η_1   = @zeros(nₓ, nᵧ)
-    x˒ξ_2   = @zeros(nₓ, nᵧ)
+    x˒ξ_2   = @ones(nₓ, nᵧ)
     x˒η_2   = @zeros(nₓ, nᵧ)
 
     y˒ξ_1   = @zeros(nₓ, nᵧ)
-    y˒η_1   = @zeros(nₓ, nᵧ)
+    y˒η_1   = @ones(nₓ, nᵧ)
     y˒ξ_2   = @zeros(nₓ, nᵧ)
-    y˒η_2   = @zeros(nₓ, nᵧ)
+    y˒η_2   = @ones(nₓ, nᵧ)
 
     J_1     = @zeros(nₓ, nᵧ)
     J_2     = @zeros(nₓ, nᵧ)
@@ -74,23 +161,29 @@ function NS_solve()
     g²ₓ_2   = @zeros(nₓ, nᵧ)
     g²ᵧ_2   = @zeros(nₓ, nᵧ)                
     
-    g₁₁_1   = @ones(nₓ, nᵧ)
-    g₁₂_1   = @zeros(nₓ, nᵧ)
-    g₂₂_1   = @ones(nₓ, nᵧ)
+    # g₁₁_1   = @ones(nₓ, nᵧ)
+    # g₁₂_1   = @zeros(nₓ, nᵧ)
+    # g₂₁_1   = @zeros(nₓ, nᵧ)
+    # g₂₂_1   = @ones(nₓ, nᵧ)
 
-    g₁₁_2   = @ones(nₓ, nᵧ)
-    g₁₂_2   = @zeros(nₓ, nᵧ)
-    g₂₂_2   = @ones(nₓ, nᵧ)
+    # g₁₁_2   = @ones(nₓ, nᵧ)
+    # g₁₂_2   = @zeros(nₓ, nᵧ)
+    # g₂₁_2   = @zeros(nₓ, nᵧ)
+    # g₂₂_2   = @ones(nₓ, nᵧ)
     
     g¹¹_1   = @ones(nₓ, nᵧ)
     g¹²_1   = @zeros(nₓ, nᵧ)
+    g²¹_1   = @zeros(nₓ, nᵧ)
     g²²_1   = @ones(nₓ, nᵧ)
 
     g¹¹_2   = @ones(nₓ, nᵧ)
     g¹²_2   = @zeros(nₓ, nᵧ)
+    g²¹_2   = @zeros(nₓ, nᵧ)
     g²²_2   = @ones(nₓ, nᵧ)
 
-    x .= repeat((0:(2nₓ))*w/(2nₓ), 1, 2nᵧ+1)'
+    # ------------------------------------------------------------------------------
+
+    x .= repeat((0:(2nₓ))*w/(2nₓ), 1, 2nᵧ+1)
     y .= h/w*x'
     
     @. x˒ξ_1[2:end-1,2:end-1] = (x[4:2:end-3,4:2:end-3] - x[2:2:end-5,4:2:end-3])/dξ
@@ -103,9 +196,57 @@ function NS_solve()
     @. y˒η_1[2:end-1,2:end-1] = (y[3:2:end-4,5:2:end-2] - y[3:2:end-4,3:2:end-4])/dη    
 
     @. x˒η_2[2:end-1,2:end-1] = (x[4:2:end-3,5:2:end-2] - x[4:2:end-3,3:2:end-4])/dη
-    @. y˒η_2[2:end-1,2:end-1] = (y[4:2:end-3,5:2:end-2] - y[4:2:end-3,3:2:end-4])/dη    
-    
-    return x, y, x˒ξ_1, x˒η_1, y˒ξ_1, y˒η_1
+    @. y˒η_2[2:end-1,2:end-1] = (y[4:2:end-3,5:2:end-2] - y[4:2:end-3,3:2:end-4])/dη
+
+    @. inv_J_1 = x˒ξ_1 * y˒η_1 - y˒ξ_1 * x˒η_1
+    @. inv_J_2 = x˒ξ_2 * y˒η_2 - y˒ξ_2 * x˒η_2    
+
+    @. J_1 = 1 / inv_J_1
+    @. J_2 = 1 / inv_J_2
+
+    @. g¹ₓ_1 =  J_1*y˒η_1
+    @. g¹ᵧ_1 = -J_1*x˒η_1
+    @. g²ₓ_1 = -J_1*y˒ξ_1
+    @. g²ᵧ_1 = -J_1*x˒ξ_1
+
+    @. g¹ₓ_2 =  J_2*y˒η_2
+    @. g¹ᵧ_2 = -J_2*x˒η_2
+    @. g²ₓ_2 = -J_2*y˒ξ_2
+    @. g²ᵧ_2 = -J_2*x˒ξ_2
+
+    @. g¹¹_1 = g¹ₓ_1^2 + g¹ᵧ_1^2
+    @. g¹²_1 = g¹ₓ_1*g²ₓ_1 + g¹ᵧ_1*g²ᵧ_1
+    @. g²¹_1 = g¹²_1
+    @. g²²_1 = g²ₓ_1^2 + g²ᵧ_1^2
+
+    @. g¹¹_2 = g¹ₓ_2^2 + g¹ᵧ_2^2
+    @. g¹²_2 = g¹ₓ_2*g²ₓ_2 + g¹ᵧ_2*g²ᵧ_2
+    @. g²¹_2 = g¹²_2
+    @. g²²_2 = g²ₓ_2^2 + g²ᵧ_2^2
+
+    Δ = zeros(nx, ny, nx, ny)
+    for i∈1:nx, j∈1:nx
+        Δ[i,j, ]
+    end
+
+    # ------------------------------------------------------------------------------
+
+    for i∈1:nₜ
+        compute_u★!(nₓ, nᵧ,
+                    dt, dξ, dη,
+                    ν,
+                    J_1, J_2, inv_J_1, inv_J_2,
+                    g¹¹_1, g¹²_1, g²¹_1, g²²_1, g¹¹_2, g¹²_2, g²¹_2, g²²_2,                     
+                    uₓ_1, uᵧ_1, uₓ_2, uᵧ_2, u¹_1, u²_1, u¹_2, u²_2, u★¹_1, u★²_2)
+        compute_div_u★(nₓ, nᵧ,
+                       dt, dξ, dη,
+                       ρ
+                       J_1, J_2, inv_J_1, inv_J_2,
+                       u★¹_1, u★²_2, div_u★)        
+
+    end
+        
+    return x, y, g¹ₓ_1, g¹ᵧ_1, g¹¹_1, g¹²_1, g²¹_1, g²²_1
 end
 
-x, y, x_ξ_1, x_η_1, y_ξ_1, y_η_1 = NS_solve()
+x, y, g¹ₓ_1, g¹ᵧ_1, g¹¹_1, g¹²_1, g²¹_1, g²²_1 = NS_solve()
