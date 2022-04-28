@@ -10,6 +10,22 @@ else
     @init_parallel_stencil(Threads, Float64, 2);
 end
 
+macro dξ_1(A, i, j)
+    return :(($A[$i+1,$j]-$A[$i-1,$j])/2)
+end
+
+macro dξ_2(A, i, j)
+    return :(($A[$i+1,$j]-$A[$i-1,$j])/2)
+end
+
+macro dη_1(A, i, j)
+    return :(($A[$i,$j+1]-$A[$i,$j-1])/2)
+end
+
+macro dη_2(A, i, j)
+    return :(($A[$i,$j+1]-$A[$i,$j-1])/2)
+end
+
 function compute_u★!(nₓ,
                      nᵧ,
                      dt,
@@ -224,29 +240,101 @@ function NS_solve()
     @. g²¹_2 = g¹²_2
     @. g²²_2 = g²ₓ_2^2 + g²ᵧ_2^2
 
-    Δ = zeros(nx, ny, nx, ny)
-    for i∈1:nx, j∈1:nx
-        Δ[i,j, ]
+    Δ = zeros(nₓ, nᵧ, nₓ, nᵧ)
+    for i∈1:nₓ, j∈1:nᵧ
+        J = J_1[i,j]
+        #J = 1/4*(J_1[i,j]+J_1[i+1,j]+J_2[i,j]+J_2[i,j+1])
+
+        if i<nₓ
+            Δ[i,j, i+1, j] += J/dξ^2*g¹¹_1[i+1,j]*inv_J_1[i+1,j]
+            Δ[i,j,   i, j] -= J/dξ^2*g¹¹_1[i+1,j]*inv_J_1[i+1,j]
+        end
+        if  1<i
+            Δ[i,j,   i, j] -= J/dξ^2*g¹¹_1[  i,j]*inv_J_1[  i,j]
+            Δ[i,j, i-1, j] += J/dξ^2*g¹¹_1[  i,j]*inv_J_1[  i,j]
+        end
+
+
+        if j<nᵧ
+            Δ[i,j, i, j+1] += J/dη^2*g²²_2[i,j+1]*inv_J_2[i,j+1]
+            Δ[i,j, i,   j] -= J/dη^2*g²²_2[i,j+1]*inv_J_2[i,j+1]            
+        end
+        if 1<j
+            Δ[i,j, i,   j] -= J/dη^2*g²²_2[i,  j]*inv_J_2[i,  j]
+            Δ[i,j, i, j-1] += J/dη^2*g²²_2[i,  j]*inv_J_2[i,  j]            
+        end
+
+        if i<nₓ && 1<j<nᵧ
+            #Δ[i,j, i  ,  j] += (1/4)*J/(dξ*dη)*g¹²_1[i+1,j]
+            #Δ[i,j, i+1,  j] += (1/4)*J/(dξ*dη)*g¹²_1[i+1,j]
+            Δ[i,j, i  ,j+1] += (1/4)*J/(dξ*dη)*g¹²_1[i+1,j]
+            Δ[i,j, i+1,j+1] += (1/4)*J/(dξ*dη)*g¹²_1[i+1,j]
+            
+            #Δ[i,j, i  ,  j] -= (1/4)*J/(dξ*dη)*g¹²_1[i+1,j]
+            #Δ[i,j, i+1,  j] -= (1/4)*J/(dξ*dη)*g¹²_1[i+1,j]
+            Δ[i,j, i  ,j-1] -= (1/4)*J/(dξ*dη)*g¹²_1[i+1,j]
+            Δ[i,j, i+1,j-1] -= (1/4)*J/(dξ*dη)*g¹²_1[i+1,j]            
+            
+        end
+
+        if 1<i && 1<j<nᵧ
+            #Δ[i,j, i  ,j  ] -= (1/4)*J/(dξ*dη)*g¹²_1[i,j]
+            #Δ[i,j, i-1,j  ] -= (1/4)*J/(dξ*dη)*g¹²_1[i,j]
+            Δ[i,j, i  ,j+1] -= (1/4)*J/(dξ*dη)*g¹²_1[i,j]
+            Δ[i,j, i-1,j+1] -= (1/4)*J/(dξ*dη)*g¹²_1[i,j]
+
+            #Δ[i,j, i  ,j  ] += (1/4)*J/(dξ*dη)*g¹²_1[i,j]
+            #Δ[i,j, i-1,j  ] += (1/4)*J/(dξ*dη)*g¹²_1[i,j]
+            Δ[i,j, i  ,j+1] += (1/4)*J/(dξ*dη)*g¹²_1[i,j]
+            Δ[i,j, i-1,j+1] += (1/4)*J/(dξ*dη)*g¹²_1[i,j]                        
+        end
+
+        if 1<i<nₓ && j<nᵧ
+            #Δ[i,j,  i,  j] += (1/4)*J/(dη*dξ)*g²¹_2[i,j+1]
+            Δ[i,j,i+1,  j] += (1/4)*J/(dη*dξ)*g²¹_2[i,j+1]
+           # Δ[i,j,  i,j+1] += (1/4)*J/(dη*dξ)*g²¹_2[i,j+1]
+            Δ[i,j,i+1,j+1] += (1/4)*J/(dη*dξ)*g²¹_2[i,j+1]
+
+           # Δ[i,j,  i,  j] -= (1/4)*J/(dη*dξ)*g²¹_2[i,j+1]
+            Δ[i,j,i-1,  j] -= (1/4)*J/(dη*dξ)*g²¹_2[i,j+1]
+            #Δ[i,j,  i,j+1] -= (1/4)*J/(dη*dξ)*g²¹_2[i,j+1]
+            Δ[i,j,i-1,j+1] -= (1/4)*J/(dη*dξ)*g²¹_2[i,j+1]                        
+        end
+
+        if 1<i<nₓ && 1<j
+            #Δ[i,j,  i,  j] -= (1/4)*J/(dη*dξ)*g²¹_2[i,j]
+            Δ[i,j,i+1,  j] -= (1/4)*J/(dη*dξ)*g²¹_2[i,j]
+            #Δ[i,j,  i,j-1] -= (1/4)*J/(dη*dξ)*g²¹_2[i,j]
+            Δ[i,j,i+1,j-1] -= (1/4)*J/(dη*dξ)*g²¹_2[i,j]
+
+            #Δ[i,j,  i,  j] += (1/4)*J/(dη*dξ)*g²¹_2[i,j]
+            Δ[i,j,i-1,  j] += (1/4)*J/(dη*dξ)*g²¹_2[i,j]
+            #Δ[i,j,  i,j-1] += (1/4)*J/(dη*dξ)*g²¹_2[i,j]
+            Δ[i,j,i-1,j-1] += (1/4)*J/(dη*dξ)*g²¹_2[i,j]            
+        end
+
+        Δ = reshape(Δ, nₓ*nᵧ, nₓ*nᵧ)
+        
     end
 
     # ------------------------------------------------------------------------------
 
-    for i∈1:nₜ
-        compute_u★!(nₓ, nᵧ,
-                    dt, dξ, dη,
-                    ν,
-                    J_1, J_2, inv_J_1, inv_J_2,
-                    g¹¹_1, g¹²_1, g²¹_1, g²²_1, g¹¹_2, g¹²_2, g²¹_2, g²²_2,                     
-                    uₓ_1, uᵧ_1, uₓ_2, uᵧ_2, u¹_1, u²_1, u¹_2, u²_2, u★¹_1, u★²_2)
-        compute_div_u★(nₓ, nᵧ,
-                       dt, dξ, dη,
-                       ρ
-                       J_1, J_2, inv_J_1, inv_J_2,
-                       u★¹_1, u★²_2, div_u★)        
+    # for i∈1:nₜ
+    #     compute_u★!(nₓ, nᵧ,
+    #                 dt, dξ, dη,
+    #                 ν,
+    #                 J_1, J_2, inv_J_1, inv_J_2,
+    #                 g¹¹_1, g¹²_1, g²¹_1, g²²_1, g¹¹_2, g¹²_2, g²¹_2, g²²_2,                     
+    #                 uₓ_1, uᵧ_1, uₓ_2, uᵧ_2, u¹_1, u²_1, u¹_2, u²_2, u★¹_1, u★²_2)
+    #     compute_div_u★(nₓ, nᵧ,
+    #                    dt, dξ, dη,
+    #                    ρ
+    #                    J_1, J_2, inv_J_1, inv_J_2,
+    #                    u★¹_1, u★²_2, div_u★)        
 
-    end
+    # end
         
-    return x, y, g¹ₓ_1, g¹ᵧ_1, g¹¹_1, g¹²_1, g²¹_1, g²²_1
+    return nₓ, nᵧ, Δ
 end
 
-x, y, g¹ₓ_1, g¹ᵧ_1, g¹¹_1, g¹²_1, g²¹_1, g²²_1 = NS_solve()
+nₓ, nᵧ, Δ = NS_solve()
