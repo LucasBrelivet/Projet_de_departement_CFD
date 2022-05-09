@@ -94,6 +94,9 @@ function compute_u★!(nₓ,
         u★²_2[i,j] = A1_2[i,j]*g²ₓ_2[i,j] + A2_2[i,j]*g²ᵧ_2[i,j]
     end
 
+    # other boundary conditions
+    u★¹_1[:,end] .= 1.0
+
     # u★¹_2, u★²_1 not needed to compute the divergence !!!
 end
 
@@ -166,13 +169,17 @@ function update_u!(nₓ,
     uᵧ_1[2:end-1,2:end-1] = 1/4*(uᵧ_2[1:end-2,2:end-1] + uᵧ_2[1:end-2,3:end] + uᵧ_2[2:end-1,2:end-1] + uᵧ_2[2:end-1,3:end])        
     
     # boundary conditions !!!
+    uₓ_1[:,end] .= 1
+    uₓ_2[:,end] .= 1
+    u¹_1[:,end] .= 1
+    u¹_2[:,end] .= 1        
     
 end
                    
                         
 
 function NS_solve()
-    nₓ, nᵧ , nₜ = 50, 50, 10
+    nₓ, nᵧ , nₜ = 30, 30, 1000
 
     w, h = 1.0, 1.0
     dξ, dη = w/nₓ, h/nᵧ
@@ -371,9 +378,13 @@ function NS_solve()
     end
     
     Δ = reshape(Δ, nₓ*nᵧ, nₓ*nᵧ)
+    Δ[1,:] .= 0
+    Δ[1,1] = 1.0
     # ------------------------------------------------------------------------------
 
     for i∈1:nₜ
+        println(i)
+        
         compute_u★!(nₓ, nᵧ,
                     dt, dξ, dη,
                     ν,
@@ -400,10 +411,10 @@ function NS_solve()
         
     end
         
-    return nₓ, nᵧ, uₓ_1, uᵧ_2
+    return nₓ, nᵧ, p, uₓ_1, uᵧ_2
 end
 
-nₓ, nᵧ, uₓ_1, uᵧ_2 = NS_solve()
+nₓ, nᵧ, p, uₓ_1, uᵧ_2 = NS_solve()
 
 x = repeat((0:(nₓ-1))*1/nₓ, 1, nᵧ)
 y = x'
